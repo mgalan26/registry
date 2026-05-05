@@ -52,15 +52,21 @@ class RegisterModuleRequest(BaseModel):
 # ---------------------------------------------------------------------------
 @router.post("/register", status_code=201)
 async def register_module(body: RegisterModuleRequest):
-    db = get_db()
+    try:
+        db = get_db()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"DB init error: {e}")
 
-    db.table("modulos").upsert({
-        "id": body.moduleId,
-        "nombre": body.nombre or body.moduleId,
-        "version": body.version,
-        "endpoint_base": body.baseUrl,
-        "estado": "activo",
-    }).execute()
+    try:
+        db.table("modulos").upsert({
+            "id": body.moduleId,
+            "nombre": body.nombre or body.moduleId,
+            "version": body.version,
+            "endpoint_base": body.baseUrl,
+            "estado": "activo",
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"modulos upsert error: {e}")
 
     if body.operations:
         ops = [
@@ -74,7 +80,10 @@ async def register_module(body: RegisterModuleRequest):
             }
             for op in body.operations
         ]
-        db.table("operaciones").upsert(ops, on_conflict="modulo_id,nombre").execute()
+        try:
+            db.table("operaciones").upsert(ops, on_conflict="modulo_id,nombre").execute()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"operaciones upsert error: {e}")
 
     return {
         "status": "registered",
