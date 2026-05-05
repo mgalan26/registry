@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import os
 
@@ -27,7 +28,10 @@ async def verify_api_key(request: Request, call_next):
 
     key = request.headers.get("X-Registry-Key")
     if not key or key != REGISTRY_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing X-Registry-Key")
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or missing X-Registry-Key"},
+        )
 
     return await call_next(request)
 

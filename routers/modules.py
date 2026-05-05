@@ -1,24 +1,50 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Any
+from pydantic import BaseModel, model_validator
+from typing import Any, Optional
 
 router = APIRouter()
 
 
 class OperationDef(BaseModel):
-    name: str
-    description: str | None = None
-    path: str
-    method: str = "POST"
+    # Acepta campos en español o inglés
+    nombre: Optional[str] = None
+    name: Optional[str] = None
+    endpoint: Optional[str] = None
+    path: Optional[str] = None
+    metodo: Optional[str] = None
+    method: Optional[str] = None
+    descripcion: Optional[str] = None
+    description: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize(self):
+        self.name = self.name or self.nombre
+        self.path = self.path or self.endpoint
+        self.method = (self.method or self.metodo or "POST").upper()
+        if not self.name:
+            raise ValueError("Operation requires 'name' or 'nombre'")
+        if not self.path:
+            raise ValueError("Operation requires 'path' or 'endpoint'")
+        return self
 
 
 class RegisterModuleRequest(BaseModel):
     moduleId: str
-    baseUrl: str
+    # Acepta endpoint_base (español) o baseUrl (inglés)
+    endpoint_base: Optional[str] = None
+    baseUrl: Optional[str] = None
+    nombre: Optional[str] = None
     version: str
     operations: list[OperationDef]
     dependencies: list[str] = []
     metadata: dict[str, Any] = {}
+
+    @model_validator(mode="after")
+    def normalize(self):
+        self.baseUrl = self.baseUrl or self.endpoint_base
+        if not self.baseUrl:
+            raise ValueError("Requires 'baseUrl' or 'endpoint_base'")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -26,13 +52,14 @@ class RegisterModuleRequest(BaseModel):
 # ---------------------------------------------------------------------------
 @router.post("/register", status_code=201)
 async def register_module(body: RegisterModuleRequest):
-    """
-    Registers a module with its operations and dependencies.
-    Placeholder — Supabase upsert will go here once tables are created.
-
-    Table: modules (moduleId, baseUrl, version, operations, dependencies, metadata, registered_at)
-    """
-    # TODO: db.get_db().table("modules").upsert({...}).execute()
+    # TODO: db.get_db().table("modulos").upsert({
+    #   "id": body.moduleId,
+    #   "nombre": body.nombre or body.moduleId,
+    #   "version": body.version,
+    #   "endpoint_base": body.baseUrl,
+    #   "estado": "activo",
+    # }).execute()
+    # + upsert operaciones
     return {
         "status": "registered",
         "moduleId": body.moduleId,
@@ -41,36 +68,18 @@ async def register_module(body: RegisterModuleRequest):
 
 
 # ---------------------------------------------------------------------------
+# GET /modules/status  — debe ir ANTES de /{moduleId}/...
+# ---------------------------------------------------------------------------
+@router.get("/status")
+async def modules_status():
+    # TODO: rows = db.get_db().table("modulos").select("id, nombre, version, estado, registered_at").execute()
+    return {"modules": [], "note": "Awaiting Supabase tables"}
+
+
+# ---------------------------------------------------------------------------
 # GET /modules/{moduleId}/resolve/{operationName}
 # ---------------------------------------------------------------------------
 @router.get("/{moduleId}/resolve/{operationName}")
 async def resolve_operation(moduleId: str, operationName: str):
-    """
-    Returns the concrete endpoint URL for a given operation of a module.
-    Placeholder — Supabase select will go here once tables are created.
-
-    Query: modules where moduleId = moduleId, then find operation by name.
-    """
-    # TODO:
-    # row = db.get_db().table("modules").select("*").eq("moduleId", moduleId).single().execute()
-    # if not row.data: raise HTTPException(404, "Module not found")
-    # op = next((o for o in row.data["operations"] if o["name"] == operationName), None)
-    # if not op: raise HTTPException(404, "Operation not found")
-    # return {"endpoint": row.data["baseUrl"] + op["path"], "method": op["method"]}
+    # TODO: query modulos + operaciones
     raise HTTPException(status_code=501, detail="Not implemented — awaiting Supabase tables")
-
-
-# ---------------------------------------------------------------------------
-# GET /modules/status
-# ---------------------------------------------------------------------------
-@router.get("/status")
-async def modules_status():
-    """
-    Returns the registration status of all modules.
-    Placeholder — Supabase select will go here once tables are created.
-
-    Query: SELECT moduleId, version, registered_at FROM modules ORDER BY registered_at DESC
-    """
-    # TODO: rows = db.get_db().table("modules").select("moduleId, version, registered_at").execute()
-    # return {"modules": rows.data}
-    return {"modules": [], "note": "Awaiting Supabase tables"}
