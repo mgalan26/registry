@@ -26,9 +26,12 @@ async def verify_api_key(request: Request, call_next):
     if request.url.path in ("/", "/health", "/docs", "/openapi.json", "/redoc"):
         return await call_next(request)
 
-    key = request.headers.get("X-Registry-Key")
-    print(f"Header recibido: {(key or 'NO ENCONTRADO')[:10]}")
-    print(f"REGISTRY_API_KEY esperada: {REGISTRY_API_KEY[:10] if REGISTRY_API_KEY else 'VACÍA'}")
+    received = request.headers.get("X-Registry-Key", "NO ENCONTRADO")
+    expected = os.environ.get("REGISTRY_API_KEY", "")
+    print(f"Header longitud: {len(received)}, valor completo: '{received}'")
+    print(f"Expected longitud: {len(expected)}, valor completo: '{expected}'")
+    print(f"Son iguales: {received == expected}")
+    key = received if received != "NO ENCONTRADO" else None
     if not key or key != REGISTRY_API_KEY:
         return JSONResponse(
             status_code=401,
