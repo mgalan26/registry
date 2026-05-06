@@ -1,5 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Optional
+import json
+
+from db import get_db
 
 router = APIRouter()
 
@@ -13,40 +17,10 @@ class CheckAuthRequest(BaseModel):
 
 class GrantAuthRequest(BaseModel):
     userId: str
-    module: str
-    operations: list[str] = []
-    grantedBy: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# POST /auth/check
-# ---------------------------------------------------------------------------
-@router.post("/check")
-async def check_authorization(body: CheckAuthRequest):
-    """
-    checkAuthorization(requestingModule, owningModule, userId, operation)
-    Returns authorized: true/false.
-    Placeholder — Supabase select will go here once tables are created.
-
-    Table: authorizations (userId, module, operations[], granted_at, granted_by)
-    Query: authorizations where userId = userId AND module = owningModule
-           AND operation IN operations[]
-    """
-    # TODO:
-    # row = (
-    #     db.get_db()
-    #     .table("authorizations")
-    #     .select("operations")
-    #     .eq("userId", body.userId)
-    #     .eq("module", body.owningModule)
-    #     .maybe_single()
-    #     .execute()
-    # )
-    # if not row.data:
-    #     return {"authorized": False, "reason": "No authorization record found"}
-    # authorized = body.operation in row.data["operations"]
-    # return {"authorized": authorized}
-    raise HTTPException(status_code=501, detail="Not implemented — awaiting Supabase tables")
+    moduloSolicitante: str
+    moduloPropietario: str
+    alcance: list[str] = []
+    grantedBy: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -54,23 +28,64 @@ async def check_authorization(body: CheckAuthRequest):
 # ---------------------------------------------------------------------------
 @router.post("/grant", status_code=201)
 async def grant_authorization(body: GrantAuthRequest):
-    """
-    Grants a user authorization for a module (and optionally specific operations).
-    Placeholder — Supabase upsert will go here once tables are created.
+    try:
+        db = get_db()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"DB init error: {e}")
 
-    Upsert into authorizations, merging operations arrays if record exists.
-    """
-    # TODO:
-    # db.get_db().table("authorizations").upsert({
-    #     "userId": body.userId,
-    #     "module": body.module,
-    #     "operations": body.operations,
-    #     "granted_by": body.grantedBy,
-    #     "granted_at": "now()",
-    # }).execute()
+    try:
+        db.table("autorizaciones_usuario").upsert(
+            {
+                "usuario_id": body.userId,
+                "modulo_solicitante": body.moduloSolicitante,
+                "modulo_propietario": body.moduloPropietario,
+                "alcance": json.dumps(body.alcance),
+                "activa": True,
+            },
+            on_conflict="usuario_id,modulo_solicitante,modulo_propietario",
+        ).execute()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"grant error: {e}")
+
     return {
         "status": "granted",
         "userId": body.userId,
-        "module": body.module,
-        "operations": body.operations,
+        "moduloSolicitante": body.moduloSolicitante,
+        "moduloPropietario": body.moduloPropietario,
+        "alcance": body.alcance,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/check
+# ---------------------------------------------------------------------------
+@router.post("/check")
+async def check_authorization(body: CheckAuthRequest):
+    try:
+        db = get_db()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"DB init error: {e}")
+
+    try:
+        result = (
+            db.table("autorizaciones_usuario")
+            .select("alcance")
+            .eq("usuario_id", body.userId)
+            .eq("modulo_solicitante", body.requestingModule)
+            .eq("modulo_propietario", body.owningModule)
+            .eq("activa", True)
+            .maybe_single()
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"check error: {e}")
+
+    if not result.data:
+        return {"authorized": False, "reason": "No authorization record found"}
+
+    alcance = result.data["alcance"]
+    if isinstance(alcance, str):
+        alcance = json.loads(alcance)
+
+    authorized = body.operation in alcance
+    return {"authorized": authorized}
